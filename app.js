@@ -5,18 +5,21 @@
     a.date.localeCompare(b.date) || (a.time || '99:99').localeCompare(b.time || '99:99')
   );
   const roleConfig = {
-    elder: { singular: 'ancião', plural: 'anciães', heading: 'AGENDA DO ANCIÃO' },
-    worker: { singular: 'encarregado', plural: 'encarregados', heading: 'AGENDA DO ENCARREGADO' },
-    deacon: { singular: 'diácono', plural: 'diáconos', heading: 'AGENDA DO DIÁCONO' }
+    elder: { singular: 'ancião', plural: 'anciães', heading: 'AGENDA DO ANCIÃO', article: 'um', selection: 'um dos', none: 'Nenhum', named: 'nomeado', identified: 'identificado', found: 'encontrados', of: 'do', icon: '♙' },
+    worker: { singular: 'encarregado', plural: 'encarregados', heading: 'AGENDA DO ENCARREGADO', article: 'um', selection: 'um dos', none: 'Nenhum', named: 'nomeado', identified: 'identificado', found: 'encontrados', of: 'do', icon: '♧' },
+    deacon: { singular: 'diácono', plural: 'diáconos', heading: 'AGENDA DO DIÁCONO', article: 'um', selection: 'um dos', none: 'Nenhum', named: 'nomeado', identified: 'identificado', found: 'encontrados', of: 'do', icon: '♢' },
+    examiner: { singular: 'examinadora', plural: 'examinadoras', heading: 'AGENDA DA EXAMINADORA', article: 'uma', selection: 'uma das', none: 'Nenhuma', named: 'nomeada', identified: 'identificada', found: 'encontradas', of: 'da', icon: '♪' }
   };
   const dateForm = document.querySelector('#date-form');
   const personForm = document.querySelector('#person-form');
   const cityForm = document.querySelector('#city-form');
   const subjectForm = document.querySelector('#subject-form');
+  const keywordForm = document.querySelector('#keyword-form');
   const dateInput = document.querySelector('#event-date');
   const personSelect = document.querySelector('#person-name');
   const citySelect = document.querySelector('#city-name');
   const subjectList = document.querySelector('#subject-list');
+  const keywordInput = document.querySelector('#keyword-search');
   const personLabel = document.querySelector('#person-label');
   const personSubmit = personForm.querySelector('button[type="submit"]');
   const dateActions = document.querySelector('#date-actions');
@@ -54,15 +57,43 @@
     ).format(date);
   }
 
+  function formatWeekday(value) {
+    const date = parseDate(value);
+    if (!date) return '';
+    return new Intl.DateTimeFormat('pt-BR', { weekday: 'long' })
+      .format(date)
+      .toLocaleUpperCase('pt-BR');
+  }
+
   function titleCaseFirst(text) {
     return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  function normalizeText(value) {
+    return String(value)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLocaleLowerCase('pt-BR');
+  }
+
+  function searchableEvent(event) {
+    return normalizeText([
+      event.category,
+      event.location,
+      event.detail,
+      event.date,
+      formatDate(event.date),
+      formatWeekday(event.date),
+      event.time
+    ].join(' '));
   }
 
   function extractNames(detail, mode) {
     const patterns = {
       elder: /(?:Ancião|Anc\.)\s*:?\s*([^;—]+)/giu,
       worker: /Encs?\.\s*:?\s*([^;—]+)/giu,
-      deacon: /(?:Diác\.?|Diácono)\s*:\s*([^;—]+)/giu
+      deacon: /(?:Diác\.?|Diácono)\s*:\s*([^;—]+)/giu,
+      examiner: /\bExam(?:\.|:)\s*([^;—]+)/giu
     };
     const names = [];
     let match;
@@ -128,8 +159,8 @@
     const placeholder = document.createElement('option');
     placeholder.value = '';
     placeholder.textContent = names.length
-      ? `Selecione um ${config.singular}`
-      : `Nenhum ${config.singular} identificado neste documento`;
+      ? `Selecione ${config.article} ${config.singular}`
+      : `${config.none} ${config.singular} ${config.identified} neste documento`;
     personSelect.appendChild(placeholder);
     names.forEach(name => {
       const option = document.createElement('option');
@@ -141,29 +172,24 @@
     personSubmit.disabled = names.length === 0;
   }
 
-  function eventCard(event, showDate = false) {
-    const time = event.time || '—';
-    const primary = showDate ? formatDate(event.date, false) : time;
-    const secondary = showDate
-      ? (event.time ? `${event.time} h` : 'sem horário')
-      : (event.time ? 'horário' : 'não informado');
-    const dateLine = showDate
-      ? `<p><strong>Data:</strong> ${escapeHtml(titleCaseFirst(formatDate(event.date)))}${event.time ? `, às ${escapeHtml(event.time)}` : ''}</p>`
-      : '';
+  function eventCard(event) {
+    const weekday = formatWeekday(event.date);
+    const shortDate = formatDate(event.date, false);
+    const timeLabel = event.time ? `${event.time} h` : 'sem horário';
     return `
       <article class="event-card">
-        <div class="event-time"><strong>${escapeHtml(primary)}</strong><span>${escapeHtml(secondary)}</span></div>
+        <div class="event-time"><span class="event-weekday">${escapeHtml(weekday)}</span><strong>${escapeHtml(shortDate)}</strong><span>${escapeHtml(timeLabel)}</span></div>
         <div class="event-content">
           <span class="event-category">${escapeHtml(event.category)}</span>
           <h3>${escapeHtml(event.location)}</h3>
-          <div class="event-meta">${dateLine}<p><strong>Informações:</strong> ${escapeHtml(event.detail)}</p></div>
+          <div class="event-meta"><p><strong>Informações:</strong> ${escapeHtml(event.detail)}</p></div>
         </div>
       </article>`;
   }
 
   function setUrlFilter(mode, value) {
     const url = new URL(window.location.href);
-    ['data', 'pessoa', 'funcao', 'cidade', 'assunto'].forEach(param => url.searchParams.delete(param));
+    ['data', 'pessoa', 'funcao', 'cidade', 'assunto', 'busca', 'avisos'].forEach(param => url.searchParams.delete(param));
     if (mode === 'date' && value) url.searchParams.set('data', value);
     if (roleConfig[mode] && value) {
       url.searchParams.set('funcao', mode);
@@ -171,6 +197,8 @@
     }
     if (mode === 'city' && value) url.searchParams.set('cidade', value);
     if (mode === 'subject' && value) url.searchParams.set('assunto', value);
+    if (mode === 'search' && value) url.searchParams.set('busca', value);
+    if (mode === 'notice' && value) url.searchParams.set('avisos', '1');
     try {
       history.replaceState(null, '', url);
     } catch (_) {
@@ -179,7 +207,7 @@
   }
 
   function setMode(mode, render = true, selected = '') {
-    currentMode = mode === 'date' || mode === 'city' || mode === 'subject' || roleConfig[mode] ? mode : 'date';
+    currentMode = mode === 'date' || mode === 'city' || mode === 'subject' || mode === 'notice' || roleConfig[mode] ? mode : 'date';
     const isDate = currentMode === 'date';
     const isCity = currentMode === 'city';
     const isSubject = currentMode === 'subject';
@@ -189,10 +217,11 @@
     personForm.hidden = !isPerson;
     cityForm.hidden = !isCity;
     subjectForm.hidden = !isSubject;
+    keywordInput.value = '';
 
     if (isPerson) {
       const config = roleConfig[currentMode];
-      personLabel.textContent = `Nome do ${config.singular}`;
+      personLabel.textContent = `Nome ${config.of} ${config.singular}`;
       fillPersonOptions(currentMode, selected);
     }
 
@@ -201,7 +230,8 @@
       button.classList.toggle('is-active', active);
       button.setAttribute('aria-pressed', String(active));
     });
-    if (render) renderWelcome();
+    if (render && currentMode === 'notice') renderNotice();
+    else if (render) renderWelcome();
   }
 
   function renderDate(value, scroll = false) {
@@ -214,7 +244,7 @@
       results.innerHTML = `<div class="empty-state"><div class="empty-icon" aria-hidden="true">✓</div><h2>Nenhum evento nesta data</h2><p>Não há registros para ${escapeHtml(readableDate)}. Use os botões de navegação para consultar outro dia.</p></div>`;
     } else {
       const label = matches.length === 1 ? '1 evento encontrado' : `${matches.length} eventos encontrados`;
-      results.innerHTML = `<div class="results-heading"><div><h2>${escapeHtml(readableDate)}</h2><p>Programação registrada no documento</p></div><span class="count-pill">${label}</span></div><div class="event-list">${matches.map(event => eventCard(event)).join('')}</div>`;
+      results.innerHTML = `<div class="results-heading"><div><h2>${escapeHtml(readableDate)}</h2><p>Programação registrada na lista</p></div><span class="count-pill">${label}</span></div><div class="event-list">${matches.map(event => eventCard(event)).join('')}</div>`;
     }
     if (scroll) results.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -226,7 +256,7 @@
     setUrlFilter(mode, name);
     const matches = events.filter(event => extractNames(event.detail, mode).includes(name));
     const label = matches.length === 1 ? '1 atendimento' : `${matches.length} atendimentos`;
-    results.innerHTML = `<div class="results-heading"><div><span class="elder-summary">${config.heading}</span><h2>${escapeHtml(name)}</h2><p>Atendimentos em ordem cronológica</p></div><span class="count-pill">${label}</span></div><div class="event-list">${matches.map(event => eventCard(event, true)).join('')}</div>`;
+    results.innerHTML = `<div class="results-heading"><div><span class="elder-summary">${config.heading}</span><h2>${escapeHtml(name)}</h2><p>Atendimentos em ordem cronológica</p></div><span class="count-pill">${label}</span></div><div class="event-list">${matches.map(event => eventCard(event)).join('')}</div>`;
     if (scroll) results.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
@@ -236,7 +266,7 @@
     setUrlFilter('city', city);
     const matches = events.filter(event => cityFor(event) === city || cityFor(event) === null);
     const label = matches.length === 1 ? '1 evento' : `${matches.length} eventos`;
-    results.innerHTML = `<div class="results-heading"><div><span class="elder-summary">AGENDA DA LOCALIDADE</span><h2>${escapeHtml(city)}</h2><p>Inclui avisos destinados a toda a regional</p></div><span class="count-pill">${label}</span></div><div class="event-list">${matches.map(event => eventCard(event, true)).join('')}</div>`;
+    results.innerHTML = `<div class="results-heading"><div><span class="elder-summary">AGENDA DA LOCALIDADE</span><h2>${escapeHtml(city)}</h2><p>Inclui avisos destinados a toda a regional</p></div><span class="count-pill">${label}</span></div><div class="event-list">${matches.map(event => eventCard(event)).join('')}</div>`;
     if (scroll) results.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
@@ -250,8 +280,58 @@
       button.classList.toggle('is-active', active);
       button.setAttribute('aria-pressed', String(active));
     });
-    results.innerHTML = `<div class="results-heading"><div><span class="elder-summary">AGENDA POR ASSUNTO</span><h2>${escapeHtml(subject)}</h2><p>Eventos em ordem cronológica</p></div><span class="count-pill">${label}</span></div><div class="event-list">${matches.map(event => eventCard(event, true)).join('')}</div>`;
+    results.innerHTML = `<div class="results-heading"><div><span class="elder-summary">AGENDA POR ASSUNTO</span><h2>${escapeHtml(subject)}</h2><p>Eventos em ordem cronológica</p></div><span class="count-pill">${label}</span></div><div class="event-list">${matches.map(event => eventCard(event)).join('')}</div>`;
     if (scroll) results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function renderNotice(scroll = false) {
+    const matches = events.filter(event => event.category === 'Avisos à irmandade');
+    setUrlFilter('notice', '1');
+    const label = matches.length === 1 ? '1 aviso' : `${matches.length} avisos`;
+    results.innerHTML = `<div class="results-heading"><div><span class="elder-summary">AVISOS À IRMANDADE</span><h2>Avisos</h2><p>Comunicados em ordem cronológica</p></div><span class="count-pill">${label}</span></div><div class="event-list">${matches.map(event => eventCard(event)).join('')}</div>`;
+    if (scroll) results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function renderSearch(query, scroll = false) {
+    const cleanedQuery = query.trim();
+    if (cleanedQuery.length < 2) return;
+    const terms = normalizeText(cleanedQuery).split(/\s+/).filter(Boolean);
+    const matches = events.filter(event => {
+      const searchable = searchableEvent(event);
+      return terms.every(term => searchable.includes(term));
+    });
+
+    currentMode = 'search';
+    keywordInput.value = cleanedQuery;
+    dateForm.hidden = true;
+    dateActions.hidden = true;
+    personForm.hidden = true;
+    cityForm.hidden = true;
+    subjectForm.hidden = true;
+    document.querySelectorAll('.mode-button').forEach(button => {
+      button.classList.remove('is-active');
+      button.setAttribute('aria-pressed', 'false');
+    });
+    setUrlFilter('search', cleanedQuery);
+
+    if (!matches.length) {
+      results.innerHTML = `<div class="empty-state"><div class="empty-icon" aria-hidden="true">⌕</div><h2>Nenhum evento encontrado</h2><p>Não encontramos eventos relacionados a “${escapeHtml(cleanedQuery)}”. Tente outra palavra.</p></div>`;
+    } else {
+      const label = matches.length === 1 ? '1 evento encontrado' : `${matches.length} eventos encontrados`;
+      results.innerHTML = `<div class="results-heading"><div><span class="elder-summary">RESULTADO DA PESQUISA</span><h2>“${escapeHtml(cleanedQuery)}”</h2><p>Eventos relacionados, em ordem cronológica</p></div><span class="count-pill">${label}</span></div><div class="event-list">${matches.map(event => eventCard(event)).join('')}</div>`;
+    }
+    if (scroll) results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function nearbyDatesHtml() {
+    const distinctDates = [...new Set(events.map(event => event.date))];
+    const today = toInputDate(new Date());
+    let recentDates = distinctDates.filter(date => date <= today).slice(-3);
+    let nextDates = distinctDates.filter(date => date > today).slice(0, 3);
+    if (recentDates.length < 3) nextDates = distinctDates.filter(date => date > today).slice(0, 6 - recentDates.length);
+    if (nextDates.length < 3) recentDates = distinctDates.filter(date => date <= today).slice(-(6 - nextDates.length));
+    const nearbyDates = [...recentDates, ...nextDates];
+    return `<div class="upcoming"><h3>Últimas e próximas datas com eventos</h3><div class="date-chips">${nearbyDates.map(date => `<button class="date-chip" type="button" data-date="${date}">${formatDate(date, false)}</button>`).join('')}</div></div>`;
   }
 
   function renderWelcome() {
@@ -259,15 +339,15 @@
     if (roleConfig[currentMode]) {
       const config = roleConfig[currentMode];
       const count = namesByRole[currentMode].length;
-      const title = count ? `Consulte a agenda de um ${config.singular}` : `Nenhum ${config.singular} nomeado`;
+      const title = count ? `Consulte a agenda de ${config.article} ${config.singular}` : `${config.none} ${config.singular} ${config.named}`;
       const message = count
-        ? `Selecione um dos ${count} ${config.plural} encontrados no documento para ver todos os seus atendimentos.`
+        ? `Selecione ${config.selection} ${count} ${config.plural} ${config.found} na lista para ver todos os seus atendimentos.`
         : `O documento atual menciona a função, mas não informa nomes de ${config.plural}. O filtro já está preparado para futuras listas.`;
-      results.innerHTML = `<div class="welcome-state"><div class="empty-icon" aria-hidden="true">♙</div><h2>${title}</h2><p>${message}</p></div>`;
+      results.innerHTML = `<div class="welcome-state"><div class="empty-icon" aria-hidden="true">${config.icon}</div><h2>${title}</h2><p>${message}</p>${nearbyDatesHtml()}</div>`;
       return;
     }
     if (currentMode === 'city') {
-      results.innerHTML = `<div class="welcome-state"><div class="empty-icon" aria-hidden="true">⌖</div><h2>Consulte por cidade</h2><p>Selecione uma das ${cities.length} cidades ou localidades identificadas no documento.</p></div>`;
+      results.innerHTML = `<div class="welcome-state"><div class="empty-icon" aria-hidden="true">⌖</div><h2>Consulte por cidade</h2><p>Selecione uma das ${cities.length} cidades ou localidades identificadas na lista.</p>${nearbyDatesHtml()}</div>`;
       return;
     }
     if (currentMode === 'subject') {
@@ -275,24 +355,24 @@
         button.classList.remove('is-active');
         button.setAttribute('aria-pressed', 'false');
       });
-      results.innerHTML = `<div class="welcome-state"><div class="empty-icon" aria-hidden="true">☷</div><h2>Consulte por assunto</h2><p>Escolha um dos ${subjects.length} assuntos acima para ver todos os eventos relacionados.</p></div>`;
+      results.innerHTML = `<div class="welcome-state"><div class="empty-icon" aria-hidden="true">☷</div><h2>Consulte por assunto</h2><p>Escolha um dos ${subjects.length} assuntos acima para ver todos os eventos relacionados.</p>${nearbyDatesHtml()}</div>`;
       return;
     }
     dateInput.value = '';
-    const distinctDates = [...new Set(events.map(event => event.date))].slice(0, 6);
-    results.innerHTML = `<div class="welcome-state"><div class="empty-icon" aria-hidden="true">▦</div><h2>Agenda pronta para consulta</h2><p>Escolha uma data ou consulte por pessoa, localidade e assunto.</p><div class="upcoming"><h3>Primeiras datas com eventos</h3><div class="date-chips">${distinctDates.map(date => `<button class="date-chip" type="button" data-date="${date}">${formatDate(date, false)}</button>`).join('')}</div></div></div>`;
+    results.innerHTML = `<div class="welcome-state"><div class="empty-icon" aria-hidden="true">▦</div><h2>Agenda pronta para consulta</h2><p>Consulte por assunto, ancião, diácono, encarregado, examinadora, cidade, avisos ou data.</p>${nearbyDatesHtml()}</div>`;
   }
 
   document.querySelectorAll('.mode-button').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
   dateForm.addEventListener('submit', event => { event.preventDefault(); if (dateInput.reportValidity()) renderDate(dateInput.value, true); });
   personForm.addEventListener('submit', event => { event.preventDefault(); if (personSelect.reportValidity()) renderPerson(currentMode, personSelect.value, true); });
   cityForm.addEventListener('submit', event => { event.preventDefault(); if (citySelect.reportValidity()) renderCity(citySelect.value, true); });
+  keywordForm.addEventListener('submit', event => { event.preventDefault(); if (keywordInput.reportValidity()) renderSearch(keywordInput.value, true); });
   subjectList.addEventListener('click', event => {
     const button = event.target.closest('[data-subject]');
     if (button) renderSubject(button.dataset.subject, true);
   });
   document.querySelectorAll('[data-shift]').forEach(button => button.addEventListener('click', () => {
-    const base = parseDate(dateInput.value) || new Date(2026, 7, 8, 12);
+    const base = parseDate(dateInput.value) || new Date(2026, 7, 9, 12);
     base.setDate(base.getDate() + Number(button.dataset.shift));
     renderDate(toInputDate(base));
   }));
@@ -306,7 +386,14 @@
   const initialCity = params.get('cidade');
   const initialSubject = params.get('assunto');
   const initialDate = params.get('data');
-  if (roleConfig[initialRole] && namesByRole[initialRole].includes(initialPerson)) {
+  const initialSearch = params.get('busca');
+  const initialNotice = params.get('avisos') === '1';
+  if (initialSearch && initialSearch.trim().length >= 2) {
+    renderSearch(initialSearch);
+  } else if (initialNotice) {
+    setMode('notice', false);
+    renderNotice();
+  } else if (roleConfig[initialRole] && namesByRole[initialRole].includes(initialPerson)) {
     setMode(initialRole, false, initialPerson);
     renderPerson(initialRole, initialPerson);
   } else if (cities.includes(initialCity)) {
